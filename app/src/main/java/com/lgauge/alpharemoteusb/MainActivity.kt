@@ -33,6 +33,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.lgauge.alpharemoteusb.ui.theme.AlphaRemoteUSBTheme
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 private const val TAG = "MainActivityTag"
 private const val ACTION_USB_PERMISSION = "com.lgauge.alpharemoteusb.USB_PERMISSION"
@@ -94,17 +96,22 @@ class MainActivity : ComponentActivity() {
                         device?.apply {
                             // call method to set up device communication
                             Log.d(TAG, "Permission granted! $device")
-                            /*
-                            device?.getInterface(0)?.also { intf ->
-                                intf.getEndpoint(0)?.also { endpoint ->
+
+                            device?.getInterface(0)?.also { usbInterface ->
+                                Log.d(TAG, "usbInterface: $usbInterface")
+
+                                usbInterface.getEndpoint(1)?.also { endpoint ->
+                                    Log.d(TAG, "endpoint: $endpoint")
+
                                     usbManager.openDevice(device)?.apply {
-                                        claimInterface(intf, true)
+                                        claimInterface(usbInterface, true)
+                                        //Log.d(TAG, "endpoint: $endpoint")
+                                        val bytes = doSetting(OpCodes.MAIN_SETTING, SettingIds.HALF_PRESS_SHUTTER, 2, 0, 2, 0)
                                         bulkTransfer(endpoint, bytes, bytes.size, 0) //do in another thread
+                                        //Toast.makeText(context, serialNumber, Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             }
-                            */
-                            Toast.makeText(context, serialNumber, Toast.LENGTH_SHORT).show()
                         }
                     } else {
                         Log.d(TAG, "permission denied for device $device")
@@ -112,6 +119,84 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    enum class OpCodes(val code: Int) {
+        MAIN_SETTING(0x9207)
+    }
+    enum class SettingIds(val code: Int) {
+        HALF_PRESS_SHUTTER(0xD2C1),
+        CAPTURE_PHOTO(0xD2C2)
+    }
+
+    fun doSetting(
+        opcode: OpCodes,
+        id: SettingIds,
+        value1: Int,
+        value2: Int,
+        value1DataSize: Int,
+        value2DataSize: Int)
+    : ByteArray
+    {
+        Toast.makeText(this, "Building Message", Toast.LENGTH_SHORT).show()
+
+        val byteBuffer: ByteBuffer = ByteBuffer.allocateDirect(256)
+        byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        byteBuffer.put(byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0))
+        byteBuffer.putShort(id.code.toShort())
+        byteBuffer.put(byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x1, 0, 0, 0, 0x4, 0, 0, 0))
+
+        when(value1DataSize) {
+            1 -> byteBuffer.put(value1.toByte())
+            2 -> byteBuffer.putShort(value1.toShort())
+            4 -> byteBuffer.putInt(value1)
+        }
+        when(value2DataSize) {
+            1 -> byteBuffer.put(value2.toByte())
+            2 -> byteBuffer.putShort(value2.toShort())
+            4 -> byteBuffer.putInt(value2)
+        }
+
+        val bytes = ByteArray(byteBuffer.position())
+        byteBuffer.rewind()
+        byteBuffer.get(bytes)
+        return bytes
+
+/*
+        using (Packet request = new Packet(opcode))
+        {
+            request.WriteHexString("00 00 00 00 00 00 00 00");
+            request.WriteUInt16((ushort)id);
+            request.WriteHexString("00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 04 00 00 00");
+            for (int i = 0; i < 2; i++)
+            {
+                var dataSize = i == 0 ? value1DataSize : value2DataSize;
+                int data = i == 0 ? value1 : value2;
+                switch (dataSize)
+                {
+                    case 1:
+                    request.WriteByte((byte)data);
+                    break;
+                    case 2:
+                    request.WriteInt16((short)data);
+                    break;
+                    case 4:
+                    request.WriteInt32(data);
+                    break;
+                }
+            }
+            byte[] buffer = SendCommand(request.GetBuffer());
+            using (Packet response = Packet.Reader(buffer))
+            {
+                if (!IsValidResponse(response))
+                {
+                    return false;
+                }
+                return true;
+            }
+        }
+*/
     }
 }
 
