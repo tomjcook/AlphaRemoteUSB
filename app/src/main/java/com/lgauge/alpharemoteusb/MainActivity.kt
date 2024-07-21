@@ -106,9 +106,29 @@ class MainActivity : ComponentActivity() {
                                     usbManager.openDevice(device)?.apply {
                                         claimInterface(usbInterface, true)
                                         //Log.d(TAG, "endpoint: $endpoint")
+
+                                        for (byte in byteArrayOf(0x01, 0x02)) {
+                                            val handshake = handshake(byte)
+                                            Log.d(TAG, "Handshake bytes: ${handshake.contentToString()}")
+                                            bulkTransfer(endpoint, handshake, handshake.size, 0)
+                                        }
+
                                         val bytes = doSetting(OpCodes.MAIN_SETTING, SettingIds.HALF_PRESS_SHUTTER, 2, 0, 2, 0)
+                                        Log.d(TAG, "Setting bytes: ${bytes.contentToString()}")
                                         bulkTransfer(endpoint, bytes, bytes.size, 0) //do in another thread
                                         //Toast.makeText(context, serialNumber, Toast.LENGTH_SHORT).show()
+                                        /*
+                                        if (!SimpleSend(OpCodes.Connect, "00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 00 00 03 00 00 00") ||
+                                            !SimpleSend(OpCodes.Connect, "00 00 00 00 00 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 00 00 03 00 00 00"))
+                                        {
+                                            return false;
+                                        }
+                                        */
+
+                                        //val connect = 0x9201
+                                        //val bytes = "00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 00 00 03 00 00 00"
+                                        //bulkTransfer(endpoint, bytes, bytes.size, 0)
+
                                     }
                                 }
                             }
@@ -122,11 +142,35 @@ class MainActivity : ComponentActivity() {
     }
 
     enum class OpCodes(val code: Int) {
+        CONNECT(0x9201),
         MAIN_SETTING(0x9207)
     }
     enum class SettingIds(val code: Int) {
         HALF_PRESS_SHUTTER(0xD2C1),
         CAPTURE_PHOTO(0xD2C2)
+    }
+
+    fun createBuffer(opcode: OpCodes, capacity: Int): ByteBuffer {
+        val byteBuffer = ByteBuffer.allocateDirect(capacity)
+        byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        byteBuffer.putShort(opcode.code.toShort())
+
+        return byteBuffer
+    }
+
+    fun handshake(byte: Byte): ByteArray {
+        val byteBuffer = createBuffer(OpCodes.CONNECT, 38)
+
+        byteBuffer.put(10, byte)
+
+        byteBuffer.put(30, 0x03)
+        byteBuffer.put(34, 0x03)
+
+        val bytes = ByteArray(byteBuffer.capacity())
+        byteBuffer.rewind()
+        byteBuffer.get(bytes)
+        return bytes
     }
 
     fun doSetting(
@@ -140,8 +184,7 @@ class MainActivity : ComponentActivity() {
     {
         Toast.makeText(this, "Building Message", Toast.LENGTH_SHORT).show()
 
-        val byteBuffer: ByteBuffer = ByteBuffer.allocateDirect(256)
-        byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        val byteBuffer = createBuffer(opcode, 256)
 
         byteBuffer.put(byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0))
         byteBuffer.putShort(id.code.toShort())
